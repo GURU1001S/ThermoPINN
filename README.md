@@ -34,8 +34,6 @@ ThermoPINN bridges the gap between pure data-driven deep learning and physics-ba
 
 The model is trained on synthetic degradation trajectories and evaluated under zero-shot transfer to real-world flight telemetry.
 
-![ThermoPINN Architecture](assets/architecture.png)
-> *Figure 1: 55-D Multi-Stream Encoder with Physics Gate*
 
 ## 📊 At a Glance
 *Note: Results are reported across two regimes — synthetic benchmark (UTDTB v5) and real-world sim-to-real transfer (N-CMAPSS).*
