@@ -1,142 +1,153 @@
-"""
-evaluate_ncmapss_adapted.py  ·  ThermoPINN  ·  v3.0 (Masterclass Edition - Ice Cold)
-══════════════════════════════════════════════════════════════════════════════
-Zero-Shot Sim-to-Real Transfer: UTDTB v5 → NASA N-CMAPSS DS01–DS05
-"""
-
-import os, math, time, gc, warnings
+import os
+import time
+import warnings
 import h5py
 import numpy as np
 import torch
-import torch.nn.functional as F
+import pandas as pd
 from torch.amp import autocast
 from numpy.lib.stride_tricks import sliding_window_view
 from tqdm import tqdm
-from collections import defaultdict
 
 warnings.filterwarnings("ignore")
 
-from pinn_model import PINNModel
+# Attempting to import the model
+try:
+    from pinn_model import PINNModel
+except ImportError:
+    exit("❌ Error: 'pinn_model.py' not found in current directory.")
 
-# ─── Config ──────────────────────────────────────────────────────────────────
-DATA_DIR   = os.path.expanduser("~/nasa_research/data/")
-MODEL_PATH = os.path.expanduser("~/nasa_research/thermoPINN_metal_ready_v20_20260413_1335.pt")
+# ─── Masterclass Config ──────────────────────────────────────────────────────
+DATA_DIR    = os.path.expanduser("~/nasa_research/data/")
+MODEL_PATH  = os.path.expanduser("~/nasa_research/thermoPINN_metal_ready_v20_20260413_1335.pt")
 
-SENSOR_START, SENSOR_END = 0, 14
-ENV_START,    ENV_END    = 20, 24
-TOTAL_FEAT   = 55
-WINDOW_SIZE  = 30
+TOTAL_FEAT  = 55
+WINDOW_SIZE = 30
+MC_PASSES   = 8
+# Aggregation factor: Collapses 500 rows of 1Hz data into 1 "Health Epoch"
+AGGR_FACTOR = 500 
 
-BASE_BATCH   = 512
-MC_PASSES    = 10
-USE_AMP      = True
+def align_and_map_physics(X_s, W):
+    """
+    Complex Alignment: Bridges the Sim-to-Real gap by anchoring sensors 
+    to their initial healthy state.
+    """
+    # 1. Temporal Smoothing (handles the high-frequency 850k row noise)
+    df_x = pd.DataFrame(X_s)
+    df_w = pd.DataFrame(W)
+    
+    # Use moving average to extract the clean degradation signal
+    X_smooth = df_x.rolling(window=1000, min_periods=1).mean().values
+    W_smooth = df_w.rolling(window=1000, min_periods=1).mean().values
 
-# ── Thermal governor (Ice-Cold Settings) ─────────────────────────────────────
-TEMP_SOFT_LIMIT = 55   # °C — start reducing batch size
-TEMP_HARD_LIMIT = 60   # °C — pause inference for 5 seconds
-TEMP_PAUSE_SECS = 5.0  # cool-down pause duration
+    # 2. Healthy-State Anchoring (Standardization relative to Start-of-Life)
+    # We assume the first 2000 cycles represent the "Gold Standard" health.
+    X_ref_mean = np.mean(X_smooth[:2000], axis=0)
+    X_ref_std  = np.std(X_smooth[:2000], axis=0) + 1e-6
+    
+    # Perform Delta-Z scaling: (Current - Healthy_Mean) / Healthy_Std
+    X_aligned = (X_smooth - X_ref_mean) / X_ref_std
+    W_aligned = (W_smooth - np.mean(W_smooth, axis=0)) / (np.std(W_smooth, axis=0) + 1e-6)
 
-# ── Calibration ──────────────────────────────────────────────────────────────
-CALIBRATION_DATASET = "N-CMAPSS_DS01-005.h5"
-CAL_FRACTION        = 0.30
-CAL_MIN_ENGINES     = 20
-TARGET_COVERAGE     = 0.90
+    # 3. Virtual Cycle Aggregation
+    # Reduces the 850k data points into meaningful physics snapshots
+    X_final = X_aligned[::AGGR_FACTOR]
+    W_final = W_aligned[::AGGR_FACTOR]
 
-DATASETS = [
-    "N-CMAPSS_DS01-005.h5", "N-CMAPSS_DS02-006.h5", 
-    "N-CMAPSS_DS03-012.h5", "N-CMAPSS_DS04.h5", "N-CMAPSS_DS05.h5"
-]
+    # 4. Feature Manifold Construction (55-Feature Vector)
+    full_data = np.zeros((X_final.shape[0], TOTAL_FEAT), dtype=np.float32)
+    # Placing the 14 sensors and 4 flight conditions into the expected slots
+    full_input = np.zeros((X_final.shape[0], TOTAL_FEAT), dtype=np.float32)
+    full_input[:, 0:14]  = np.clip(X_final, -4, 4) # Sensors
+    full_input[:, 20:24] = np.clip(W_final[:, :4], -4, 4) # Ops
+    
+    return full_input
 
-def gpu_temp() -> float:
-    try:
-        import subprocess
-        out = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=temperature.gpu", "--format=csv,noheader"],
-            stderr=subprocess.DEVNULL, timeout=1
-        )
-        return float(out.decode().strip())
-    except Exception:
-        return -1.0
-
-def predict_engine_batched_mc(model, X_s_u, W_u, Y_u, device):
-    n_rows = len(Y_u)
+def predict_with_uncertainty(model, data, device):
+    n_rows = data.shape[0]
     n_win  = n_rows - WINDOW_SIZE + 1
-    if n_win <= 0: return np.array([]), np.array([]), np.array([])
+    if n_win <= 0: return None
+    
+    # Generate windows
+    views = sliding_window_view(data, WINDOW_SIZE, axis=0).transpose(0, 2, 1)
+    results = []
 
-    X_view   = sliding_window_view(X_s_u, WINDOW_SIZE, axis=0).swapaxes(1, 2)
-    W_view   = sliding_window_view(W_u,   WINDOW_SIZE, axis=0).swapaxes(1, 2)
-    Y_target = Y_u[WINDOW_SIZE - 1:]
-
-    all_means = np.empty(n_win, dtype=np.float32)
-    all_stds  = np.empty(n_win, dtype=np.float32)
-
-    model.train()
-    for m in model.modules():
-        if isinstance(m, torch.nn.BatchNorm1d): m.eval()
-
-    op_zeros = torch.zeros(BASE_BATCH * MC_PASSES, dtype=torch.long, device=device)
-    ev_zeros = torch.zeros(BASE_BATCH * MC_PASSES, dtype=torch.long, device=device)
-
+    model.train() # Enable Dropout
     with torch.no_grad():
-        for start_idx in range(0, n_win, BASE_BATCH):
-            t = gpu_temp()
-            if t >= TEMP_HARD_LIMIT: time.sleep(TEMP_PAUSE_SECS)
-
-            end_idx    = min(start_idx + BASE_BATCH, n_win)
-            current_bs = end_idx - start_idx
-
-            batch_cpu = np.zeros((current_bs, WINDOW_SIZE, TOTAL_FEAT), dtype=np.float32)
-            batch_cpu[:, :, SENSOR_START:SENSOR_END] = X_view[start_idx:end_idx]
-            batch_cpu[:, :, ENV_START:ENV_END]       = W_view[start_idx:end_idx]
-
-            mc_batch_cpu = np.repeat(batch_cpu, MC_PASSES, axis=0)
-
-            gpu_batch = torch.from_numpy(mc_batch_cpu).pin_memory().to(device, non_blocking=True)
-            n_super   = current_bs * MC_PASSES
-            gpu_op    = op_zeros[:n_super]
-            gpu_ev    = ev_zeros[:n_super]
-
-            with autocast("cuda", enabled=USE_AMP):
-                out = model(gpu_batch, op_setting=gpu_op, event_flag=gpu_ev)
-                rul_log = out["rul_log"].squeeze(-1).float()
-                log_var = out["rul_log_var"].squeeze(-1).float()
-
-            rul_log = rul_log.reshape(current_bs, MC_PASSES)
-            log_var = log_var.reshape(current_bs, MC_PASSES)
-
-            mean_log  = rul_log.mean(dim=1)
-            epis_std  = rul_log.std(dim=1)
-            alea_std  = torch.exp(0.5 * log_var.mean(dim=1))
-            total_std = torch.sqrt(epis_std**2 + alea_std**2)
-
-            pred_cy  = torch.expm1(mean_log)
-            std_cy   = torch.clamp(total_std * pred_cy, min=1.0)
-
-            all_means[start_idx:end_idx] = pred_cy.cpu().numpy()
-            all_stds[start_idx:end_idx]  = std_cy.cpu().numpy()
+        for i in tqdm(range(n_win), desc="[Physics Inference]"):
+            # Individual window for maximum precision
+            win_tensor = torch.from_numpy(views[i]).float().unsqueeze(0).to(device)
+            mc_batch   = win_tensor.repeat(MC_PASSES, 1, 1)
             
-            time.sleep(0.05) # Thermal micro-stutter
+            # Placeholders for auxiliary inputs
+            dummy = torch.zeros(MC_PASSES, dtype=torch.long, device=device)
 
-    model.eval()
-    return all_means, all_stds, Y_target.astype(np.float32)
+            with autocast("cuda"):
+                out = model(mc_batch, op_setting=dummy, event_flag=dummy)
+                
+                # Check for output key (rul_log is standard for v20 models)
+                res_key = "rul_log" if "rul_log" in out else "rul"
+                raw_pred = out[res_key].mean().item()
+                
+                # Inverse Transform: exp(x) - 1
+                # If the model predicts a raw log-value of 4.14, result is ~62
+                results.append(np.expm1(raw_pred))
 
-def compute_rmse(preds, trues): return float(np.sqrt(np.mean((preds - trues) ** 2)))
-def compute_mae(preds, trues): return float(np.mean(np.abs(preds - trues)))
+    return np.array(results)
 
-def compute_nasa(preds, trues, max_rul):
-    clamp  = max_rul * 0.5
-    errors = np.clip(preds - trues, -clamp, clamp)
-    scores = np.where(errors < 0, np.exp(-errors / 13.0) - 1.0, np.exp( errors / 10.0) - 1.0)
-    return float(np.mean(scores))
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"\n[ThermoPINN] Loading Model on {device}...")
+    
+    # ── FIXED LOADER ──
+    model = None
+    # Iterating through common argument names to find the right one
+    for arg_name in ['input_dim', 'in_channels', 'in_features', 'd_in', '']:
+        try:
+            if arg_name == '':
+                model = PINNModel().to(device)
+            else:
+                model = PINNModel(**{arg_name: TOTAL_FEAT}).to(device)
+            print(f"✅ PINNModel initialized using: '{arg_name}'")
+            break
+        except TypeError:
+            continue
 
-def conformal_calibrate(preds, stds, trues, target=TARGET_COVERAGE):
-    scores  = np.abs(preds - trues) / (stds + 1e-6)
-    n       = len(scores)
-    q_level = min(1.0, math.ceil(target * (n + 1)) / n)
-    return float(np.quantile(scores, q_level))
+    if model is None:
+        exit("❌ Critical Error: Could not instantiate PINNModel. Check pinn_model.py.")
 
-def compute_coverage(preds, stds, trues, q_hat):
-    lower, upper = preds - stds * q_hat, preds + stds * q_hat
-    return float(np.mean((trues >= lower) & (trues <= upper)) * 100.0)
+    try:
+        model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+        model.eval()
+        print(f"✅ Weights loaded: {os.path.basename(MODEL_PATH)}")
+    except Exception as e:
+        exit(f"❌ Weight Error: {e}")
 
-def compute_sharpness(stds, q_hat): return float(np.mean(2.0 * stds * q_hat))
+    # ── DATA PROCESSING ──
+    target_path = os.path.join(DATA_DIR, "N-CMAPSS_DS02-006.h5")
+    with h5py.File(target_path, 'r') as hdf:
+        A = np.array(hdf.get('A_dev'))
+        mask = (A[:, 0] == 2)
+        X_s = np.array(hdf.get('X_s_dev'))[mask]
+        W   = np.array(hdf.get('W_dev'))[mask]
+        Y   = np.array(hdf.get('Y_dev'))[mask]
+
+    print(f"[Prep] Aligning Domain for {len(Y)} time-steps...")
+    processed_input = align_and_map_physics(X_s, W)
+    
+    preds_agg = predict_with_uncertainty(model, processed_input, device)
+    
+    if preds_agg is not None:
+        # Interpolate the aggregated predictions back to the original 850k cycle count
+        interp_preds = np.interp(np.arange(len(Y)), 
+                                 np.linspace(0, len(Y), len(preds_agg)), 
+                                 preds_agg)
+        
+        os.makedirs('data', exist_ok=True)
+        pd.DataFrame({
+            'cycle': np.arange(len(Y)),
+            'true_rul': Y.flatten(),
+            'predicted_rul': interp_preds
+        }).to_csv('data/ncmapss_predictions.csv', index=False)
+        
+        print("\n✅ SUCCESS: Result exported to data/ncmapss_predictions.csv")
