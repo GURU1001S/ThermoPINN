@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual Environments
+venv/
+env/
+ENTER/
+
+# Massive Data & Model Weights (Do not push to GitHub)
+data/*.h5
+checkpoints/*.pt
+*.pt
+*.h5
+
+# OS generated files
+.DS_Store

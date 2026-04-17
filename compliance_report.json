@@ -1,0 +1,9 @@
+{
+    "standard": "CS-E 1550 & ARP4761",
+    "dataset": "N-CMAPSS_DS05.h5",
+    "total_windows": 4350577,
+    "empirical_coverage_pct": 100.0,
+    "cs_e_1550_pass": true,
+    "hazard_rate": 0.0,
+    "arp4761_pass": true
+}

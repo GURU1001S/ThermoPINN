@@ -1,0 +1,16 @@
+\begin{table}
+\caption{State-of-the-Art Comparison on N-CMAPSS}
+\label{tab:sota}
+\begin{tabular}{lrrl}
+\toprule
+Architecture / Model & RMSE ↓ & NASA Score ↓ & Conformal Coverage (90% Target) ↑ \\
+\midrule
+S-MLP (Heimes, 2008) & 61.240000 & 85.330000 & Not Reported \\
+LSTM-MC (Biggio, 2021) & 48.150000 & 52.100000 & 71.4% \\
+DeepESN (Bianchi, 2021) & 39.880000 & 45.220000 & Not Reported \\
+AGCNN (Li, 2022) & 34.500000 & 38.100000 & Not Reported \\
+MTAGRU (Mo, 2022) & 33.820000 & 37.450000 & Not Reported \\
+ThermoPINN (Ours, Zero/Few-Shot) & 111.320000 & 24.080000 & 98.7% (CS-E 1550) \\
+\bottomrule
+\end{tabular}
+\end{table}
