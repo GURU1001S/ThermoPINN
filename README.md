@@ -1,4 +1,4 @@
-# Physics Constraints Are Not Enough: Non-Identifiability of PINNs Under Distribution Shift
+# ThermoPINN:Physics Constraints Are Not Enough: Non-Identifiability of PINNs Under Distribution Shift
 
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=flat-square&logo=pytorch)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)
