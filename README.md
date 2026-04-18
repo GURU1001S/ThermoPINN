@@ -1,4 +1,4 @@
-# ThermoPINN:Physics Constraints Are Not Enough: Non-Identifiability of PINNs Under Distribution Shift
+# ThermoPINN: Physics Constraints Are Not Enough — Failure Modes of PINNs Under Distribution Shift
 
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=flat-square&logo=pytorch)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)
@@ -149,7 +149,8 @@ Given a multivariate sensor time-series $\mathbf{X}_{1:T} \in \mathbb{R}^{T \tim
 $$P_{\text{train}}(\mathbf{X}, y) \neq P_{\text{test}}(\mathbf{X}, y)$$
 
 **Computational Graph & Gradient Flow:**
-* Forward pass: $$\hat{y}, \hat{z} = f_\theta(X)$$
+* Forward pass: 
+$$\hat{y}, \hat{z} = f_\theta(X)$$
 * Loss decomposition: 
 $$\mathcal{L}_{\text{data}} = \mathbb{E}[w(e) \cdot H_1(e)]$$
 $$\mathcal{L}_{\text{phys}} = \lambda_1 \mathcal{L}_{\text{mono}} + \lambda_2 \mathcal{L}_{\text{phys}}^{\text{Paris}} + \lambda_3 \mathcal{L}_{\text{phys}}^{\text{Arrh}}$$
@@ -293,3 +294,4 @@ python train_maml_pinn.py
 
 # Evaluate on N-CMAPSS
 python evaluate_ncmapss_adapted.py
+pip install -r requirements.txt
