@@ -72,7 +72,7 @@ The architecture was trained purely on synthetic UTDTB v5 data and subjected to 
 * **NASA Classic C-MAPSS:** Utilizing a Gradient Reversal Layer (GRL) for domain alignment, the model improved target domain RMSE by 26.04 cycles unsupervised.
 
 ![Feature Distribution Shift](assets/fig10_distribution_shift.png)
-*Fig: Feature Distribution Shift Analysis: UTDTB v5 (Synthetic) vs. NASA N-CMAPSS (Real).*
+*Fig: Feature Distribution Shift Analysis: UTDTB v5 (Synthetic) vs. NASA N-CMAPSS (Real).*  
 
 ![RUL Prediction Trajectories](assets/fig1_sim2real_prediction.png)
 *Fig: Zero-Shot RUL Prediction on Real N-CMAPSS Engines.*
@@ -86,14 +86,15 @@ Under identical training conditions, ThermoPINN demonstrates competitive or supe
 | TimesNet (ICLR 2023) | 40.7K | 45.1 ± 0.8 | 140,605.3 |
 | DLinear (AAAI 2023) | 0.2K | 69.5 ± 1.2 | 8.85e17† |
 
-*\*Note: RMSE 40.2 reflects the UTDTB v5 benchmark comparison; 31.88 reflects N-CMAPSS sim-to-real evaluation.*
+*
+Note: RMSE 40.2 reflects the UTDTB v5 benchmark comparison; 31.88 reflects N-CMAPSS sim-to-real evaluation.*
 *†Note: NASA score penalizes late predictions exponentially more than early ones, reflecting safety-critical risk asymmetry.*
 
 ![NASA Score Explanation](assets/fig11_nasa_score.png)
 *Fig: Operational interpretation of the NASA Asymmetric Score for MRO.*
 
 ![SOTA Benchmark Comparison](assets/fig13_sota_comparison.png)
-*Fig: SOTA Benchmark Comparison (UTDTB v5).*
+*Fig: SOTA Benchmark Comparison (UTDTB v5).*  
 
 ## 🔬 Ablation Studies & Stress Testing
 A total of 25+ controlled experiments and 7 major ablation categories were conducted to validate architectural robustness and isolate failure modes. *All ablation experiments were conducted under controlled settings with isolated variable modification to ensure causal interpretability of observed performance changes.*
@@ -230,7 +231,7 @@ $$\boxed{ \text{If } \lambda < \infty \text{ and } f_{\text{phys}} \text{ is non
 
 **🔷 Empirical Argument & Proof Sketch**
 1. Neural networks act as universal approximators.
-2. Due to non-identifiability, $\exists f_1, f_2 \in \mathcal{F}_{\text{NN}} \quad \text{s.t.} \quad f_1(X) = f_2(X) \;\; \forall X \in \mathcal{D}$, where $f_1 \in \mathcal{F}_{\text{phys}}$ and $f_2 \notin \mathcal{F}_{\text{phys}}$.
+2. Due to non-identifiability, $\exists f_1, f_2 \in \mathcal{F}_{\text{NN}} \quad \text{s.t.} \quad f_1(X) = f_2(X) \;\forall X \in \mathcal{D}$, where $f_1 \in \mathcal{F}_{\text{phys}}$ and $f_2 \notin \mathcal{F}_{\text{phys}}$.
 3. This implies $\mathcal{L}_{\text{data}}(f_1) = \mathcal{L}_{\text{data}}(f_2)$. However, $\mathcal{L}_{\text{phys}}(f_1) \ll \mathcal{L}_{\text{phys}}(f_2)$.
 4. Because the physics loss acts strictly as a soft regularizer ($\lambda < \infty$), the optimizer can freely converge to the statistical shortcut $f_2$ without penalty on the data manifold.
 5. $\Rightarrow f_\theta \notin \mathcal{F}_{\text{phys}}$. The failure is optimization-consistent.
@@ -243,9 +244,9 @@ $$\boxed{ \text{If } \lambda < \infty \text{ and } f_{\text{phys}} \text{ is non
 | Monotonic Damage | $\hat{y}_{t+1} \le \hat{y}_t$ | 100% compliance | Easy topological constraint |
 
 **5.2 Domain Invariance Proof**
-If $f_\theta \in \mathcal{F}_{\text{phys}}$, then $m_{\text{source}} = m_{\text{target}}$ must hold invariantly across domains. However, we observed $m_{\text{UTDTB}} \neq m_{\text{N-CMAPSS}}$ **even under consistent normalization**. The difference is statistically significant ($p < 0.05$), ruling out estimation noise. True physics is domain-invariant; learned representations are domain-dependent: 
+If $f_\theta \in \mathcal{F}_{\text{phys}}$, then $m_{\text{source}} = m_{\text{target}}$ must hold invariantly across domains. However, we observed $m_{\text{UTDTB}} \neq m_{\text{N-CMAPSS}}$ even under consistent normalization. The difference is statistically significant ($p < 0.05$), ruling out estimation noise. True physics is domain-invariant; learned representations are domain-dependent:
 $$m_{\text{source}} \neq m_{\text{target}} \Rightarrow f_\theta \notin \mathcal{F}_{\text{phys}}$$
-Formally: $\Pr(\hat{m} = m_{\text{true}}) \approx 0$. **Domain invariance violation serves as the strongest empirical evidence of non-physical learning.**
+Formally: $\Pr(\hat{m} = m_{\text{true}}) \approx 0$. Domain invariance violation serves as the strongest empirical evidence of non-physical learning.
 
 ### 6. Uncertainty Quantification & The Manifold Projection Hypothesis (MPH)
 **6.1 Decomposed Heteroscedastic Uncertainty**
@@ -285,13 +286,79 @@ $$\sigma^2_{\text{OOD}} < \sigma^2_{\text{ID}} \quad (\text{deflation} \approx 1
 
 ### 🛠️ Environment Setup
 ```bash
-git clone [https://github.com/GURU1001S/ThermoPINN.git](https://github.com/GURU1001S/ThermoPINN.git)
+git clone https://github.com/GURU1001S/ThermoPINN.git
 cd ThermoPINN
 pip install -r requirements.txt
+```
 
-# Train the model
-python train_maml_pinn.py
+### ⚡ Execution Pipeline
+* Train Base Model: `python train_maml_pinn.py --epochs 50`
+* Run Sim-to-Real Eval: `python evaluate_ncmapss_adapted.py --dataset DS02`
+* Physics Validation: `python external_physics_validation.py`
 
-# Evaluate on N-CMAPSS
-python evaluate_ncmapss_adapted.py
-pip install -r requirements.txt
+## 🔁 Reproducibility & Configuration
+To ensure research transparency, all experiments are reproducible under the following configuration:
+* **Sequence Length:** 30 cycles (Sliding Window)
+* **Batch Size:** 256
+* **Optimizer:** Adam (lr = 1e-3, weight_decay = 1e-4)
+* **Training Epochs:** 50 (with Early Stopping)
+* **Normalization:** Per-trajectory Z-score normalization to prevent data leakage.
+* **Physics Constants:** Paris Law ($m = 3.0$), Arrhenius Activation ($E_a = 300$ kJ/mol)
+* **Hardware:** NVIDIA RTX 3050 Laptop GPU (~120 hours total compute time)
+* **Random Seed:** 42
+
+All experiments can be reproduced via the provided scripts with fixed random seeds and dataset configurations.
+
+## ⚠️ Limitations & Future Research Directions
+ThermoPINN reveals a fundamental gap between predictive accuracy and physical validity in safety-critical machine learning systems. While the model achieves strong empirical performance, our results provide consistent empirical and theoretical evidence that soft-constrained formulations:
+$$f_{\text{phys}}(z) \approx 0$$
+are insufficient to guarantee adherence to governing physical laws under partial observability and distribution shift.
+
+Rather than presenting a final solution, ThermoPINN is positioned as a controlled failure case that exposes structural limitations of current PINN methodologies. Addressing these limitations requires a shift from regularization-based physics integration toward structural enforcement of physical laws.
+
+### 🔧 1. Hard-Constrained Architectures
+Future work should investigate architectures that enforce physics as strict constraints:
+$$z \in \{ z : f_{\text{phys}}(z) = 0 \}, \quad \text{or} \quad z = g_\psi(u), \; g_\psi \in \mathcal{F}_{\text{phys}}$$
+Such formulations eliminate degrees of freedom that enable statistical shortcut learning and may resolve identifiability issues observed in soft-constrained PINNs.
+
+### 🧠 2. Physics-Consistent Latent Representations
+The observed failure to recover domain-invariant physical constants highlights the need for:
+* Symbolic regression heads for explicit equation discovery.
+* Structured latent spaces aligned with physical variables.
+* Hybrid neuro-symbolic models that enforce interpretability and invariance.
+
+These approaches aim to ensure that learned representations remain within the true physical function space, rather than merely approximating it.
+
+### 📏 3. Unit-Consistent Learning
+Our experiments reveal that normalization can distort physical relationships:
+* Physics laws are inherently scale-sensitive.
+* Standard normalization destroys unit consistency.
+
+Future systems must adopt:
+$$\tilde{x} = \frac{x}{x_{\text{ref}}}$$
+or operate directly in physical units, ensuring that learned constants retain real-world meaning.
+
+### 🌐 4. Identifiability Under Partial Observability
+The failure modes observed in ThermoPINN suggest that latent physics is fundamentally non-identifiable from limited sensor observations. Future research should:
+* Formally characterize identifiability conditions.
+* Quantify ambiguity in inverse mappings.
+* Develop architectures robust to latent uncertainty.
+
+This connects PINN failure to classical inverse problem theory.
+
+### ⚠️ 5. Robustness to Distribution Shift (MPH Validation)
+The proposed Manifold Projection Hypothesis (MPH) suggests that neural encoders project OOD inputs onto the training manifold, leading to false normalcy and uncertainty collapse. Future work must:
+* Develop quantitative metrics for manifold projection behavior.
+* Validate MPH across architectures and datasets.
+* Design models that preserve OOD separability in latent space.
+
+### ✈️ 6. Certification-Aware AI for Aerospace
+For deployment in safety-critical systems, future models must align with certification frameworks such as DO-178C and ARP4761. This requires:
+* Physically valid predictions.
+* Calibrated uncertainty under OOD.
+* Interpretable degradation trajectories.
+
+## 🔭 Research Outlook
+Addressing these challenges requires moving beyond correlation-driven learning toward architectures where physical laws are treated as first-class structural constraints, not auxiliary losses.
+
+ThermoPINN therefore serves as an empirical foundation for the next generation of physics-consistent, safety-certifiable machine learning systems.
