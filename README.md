@@ -44,7 +44,6 @@ ThermoPINN bridges the gap between pure data-driven deep learning and physics-ba
 
 The model is trained on synthetic degradation trajectories and evaluated under zero-shot transfer to real-world flight telemetry.
 
-
 ## 📊 At a Glance
 *Note: Results are reported across two regimes — synthetic benchmark (UTDTB v5) and real-world sim-to-real transfer (N-CMAPSS). Statistics are reported as **Mean ± Std over 5 independent random seeds**.*
 
@@ -72,7 +71,7 @@ The architecture was trained purely on synthetic UTDTB v5 data and subjected to 
 * **NASA Classic C-MAPSS:** Utilizing a Gradient Reversal Layer (GRL) for domain alignment, the model improved target domain RMSE by 26.04 cycles unsupervised.
 
 ![Feature Distribution Shift](assets/fig10_distribution_shift.png)
-*Fig: Feature Distribution Shift Analysis: UTDTB v5 (Synthetic) vs. NASA N-CMAPSS (Real).*  
+*Fig: Feature Distribution Shift Analysis: UTDTB v5 (Synthetic) vs. NASA N-CMAPSS (Real).*
 
 ![RUL Prediction Trajectories](assets/fig1_sim2real_prediction.png)
 *Fig: Zero-Shot RUL Prediction on Real N-CMAPSS Engines.*
@@ -86,15 +85,14 @@ Under identical training conditions, ThermoPINN demonstrates competitive or supe
 | TimesNet (ICLR 2023) | 40.7K | 45.1 ± 0.8 | 140,605.3 |
 | DLinear (AAAI 2023) | 0.2K | 69.5 ± 1.2 | 8.85e17† |
 
-*
-Note: RMSE 40.2 reflects the UTDTB v5 benchmark comparison; 31.88 reflects N-CMAPSS sim-to-real evaluation.*
+*\*Note: RMSE 40.2 reflects the UTDTB v5 benchmark comparison; 31.88 reflects N-CMAPSS sim-to-real evaluation.*
 *†Note: NASA score penalizes late predictions exponentially more than early ones, reflecting safety-critical risk asymmetry.*
 
 ![NASA Score Explanation](assets/fig11_nasa_score.png)
 *Fig: Operational interpretation of the NASA Asymmetric Score for MRO.*
 
 ![SOTA Benchmark Comparison](assets/fig13_sota_comparison.png)
-*Fig: SOTA Benchmark Comparison (UTDTB v5).*  
+*Fig: SOTA Benchmark Comparison (UTDTB v5).*
 
 ## 🔬 Ablation Studies & Stress Testing
 A total of 25+ controlled experiments and 7 major ablation categories were conducted to validate architectural robustness and isolate failure modes. *All ablation experiments were conducted under controlled settings with isolated variable modification to ensure causal interpretability of observed performance changes.*
@@ -146,35 +144,47 @@ Our empirical and theoretical results decouple PINN failures into three distinct
 *All equations below are grounded in experimental results from UTDTB v5 (synthetic, 1.1M rows, 55 features) and NASA N-CMAPSS (zero-shot transfer). Every numeric constant is sourced from actual training runs.*
 
 ### 1. Extended Problem Definition & Computational Graph
-Given a multivariate sensor time-series $\mathbf{X}_{1:T} \in \mathbb{R}^{T \times d}$ ($T = 30$ timesteps, $d = 55$ features), the model operates under distribution shift:
+Given a multivariate sensor time-series $X_{1:T} \in \mathbb{R}^{T \times d}$ ($T = 30$ timesteps, $d = 55$ features), the model operates under distribution shift:
+
 $$P_{\text{train}}(\mathbf{X}, y) \neq P_{\text{test}}(\mathbf{X}, y)$$
 
 **Computational Graph & Gradient Flow:**
 * Forward pass: 
+
 $$\hat{y}, \hat{z} = f_\theta(X)$$
+
 * Loss decomposition: 
+
 $$\mathcal{L}_{\text{data}} = \mathbb{E}[w(e) \cdot H_1(e)]$$
+
 $$\mathcal{L}_{\text{phys}} = \lambda_1 \mathcal{L}_{\text{mono}} + \lambda_2 \mathcal{L}_{\text{phys}}^{\text{Paris}} + \lambda_3 \mathcal{L}_{\text{phys}}^{\text{Arrh}}$$
+
 * Backpropagation:
+
 $$\nabla_\theta \mathcal{L} = \nabla_\theta \mathcal{L}_{\text{data}} + \lambda \nabla_\theta \mathcal{L}_{\text{phys}}$$
+
 *Gradients from physics constraints propagate only through latent physics nodes $z_{\text{phys}}$, creating partial structural regularization.*
 
 ### 2. Data Loss — Asymmetric Huber
-Predictions in log-RUL space: $\hat{\ell} = \log(1 + \hat{y})$, $\ell^* = \log(1 + y^*)$, error $e = \hat{\ell} - \ell^*$.
-$$
-\mathcal{L}_{\text{data}} = \mathbb{E}\left[w(e) \cdot H_1(e)\right], \qquad w(e) = \begin{cases} 2.0 & e > 0 \quad (\text{late prediction}) \\ 1.0 & e \leq 0 \quad (\text{early prediction}) \end{cases}
-$$
+
+ℓ̂ = log(1 + ŷ), ℓ* = log(1 + y*), e = ℓ̂ − ℓ*
+
+𝓛_data = E[ w(e) · H₁(e) ]
+
+w(e) = 2.0  if e > 0   (late prediction)  
+w(e) = 1.0  if e ≤ 0   (early prediction)
 
 ### 3. Mechanistic Physics Constraints
 **3.1 Monotonic Degradation ✅ (100% compliant, ARP4761)**
 Thermodynamic systems accumulate damage monotonically:
-$$
-\mathcal{L}_{\text{mono}} = \mathbb{E}\left[\max\left(0, \hat{\ell}_{t+1} - \hat{\ell}_t\right)\right]
-$$
+
+$$\mathcal{L}_{\text{mono}} = \mathbb{E}\left[\max\left(0, \hat{\ell}_{t+1} - \hat{\ell}_t\right)\right]$$
 
 **3.2 Paris–Erdogan Fatigue Crack Growth**
 From latent physics states $\mathbf{z} \in \mathbb{R}^{19}$, predict crack length $\hat{a}$ and stress intensity factor $\widehat{\Delta K}$. The discrete derivative approximation makes the law computable:
+
 $$\frac{d\hat{a}}{dN} \approx \frac{\hat{a}_{t+1} - \hat{a}_t}{\Delta N}$$
+
 where $\Delta N = 1$ cycle (discrete timestep assumption). 
 
 This exposes two distinct failure modes:
@@ -182,25 +192,22 @@ This exposes two distinct failure modes:
 * **Identifiability Failure (Fundamental Issue):** Crucially, even after correcting for scaling effects (consistent normalization), the model fails to recover domain-invariant constants across datasets. This proves the failure is structural and not merely a scaling artifact.
 
 Enforced as residual loss:
-$$
-\mathcal{L}_{\text{phys}}^{\text{Paris}} = \left|\frac{\hat{a}_{t+1} - \hat{a}_t}{\Delta N} - C(\widehat{\Delta K})^m\right|^2
-$$
+
+$$\mathcal{L}_{\text{phys}}^{\text{Paris}} = \left|\frac{\hat{a}_{t+1} - \hat{a}_t}{\Delta N} - C(\widehat{\Delta K})^m\right|^2$$
 
 **3.3 Full Physics Loss** ($\lambda$ values from final v19 checkpoint)
-$$
-\mathcal{L}_{\text{phys}} = \underbrace{0.10}_{\lambda_{\text{mono}}}\mathcal{L}_{\text{mono}} + \underbrace{0.50}_{\lambda_{\text{Paris}}}\mathcal{L}_{\text{phys}}^{\text{Paris}} + \underbrace{0.50}_{\lambda_{\text{Arrh}}}\mathcal{L}_{\text{phys}}^{\text{Arrh}} + \underbrace{0.50}_{\lambda_{\text{sup}}} \|\hat{\mathbf{z}}_{\text{phys}} - \mathbf{z}^*_{\text{phys}}\|^2
-$$
+
+$$\mathcal{L}_{\text{phys}} = \underbrace{0.10}_{\lambda_{\text{mono}}}\mathcal{L}_{\text{mono}} + \underbrace{0.50}_{\lambda_{\text{Paris}}}\mathcal{L}_{\text{phys}}^{\text{Paris}} + \underbrace{0.50}_{\lambda_{\text{Arrh}}}\mathcal{L}_{\text{phys}}^{\text{Arrh}} + \underbrace{0.50}_{\lambda_{\text{sup}}} \|\hat{\mathbf{z}}_{\text{phys}} - \mathbf{z}^*_{\text{phys}}\|^2$$
 
 ### 4. Physics-Aware MAML
 **4.1 ANIL Inner Loop** ($K=2$ steps, $\alpha = 10^{-3}$)
 Only head parameters $\boldsymbol{\phi} \subset \boldsymbol{\theta}$ are adapted; the encoder is frozen (Almost-No-Inner-Loop, ANIL):
-$$
-\boldsymbol{\phi}_i^{(k+1)} = \boldsymbol{\phi}_i^{(k)} - \alpha \nabla_{\boldsymbol{\phi}} \mathcal{L}_{\text{task}}\left( f_{\boldsymbol{\theta}}\big|_{\boldsymbol{\phi}^{(k)}}, \mathcal{S}_i\right)
-$$
+
+$$\boldsymbol{\phi}_i^{(k+1)} = \boldsymbol{\phi}_i^{(k)} - \alpha \nabla_{\boldsymbol{\phi}} \mathcal{L}_{\text{task}}\left( f_{\boldsymbol{\theta}}\big|_{\boldsymbol{\phi}^{(k)}}, \mathcal{S}_i\right)$$
+
 Task loss includes physics in the inner loop only:
-$$
-\mathcal{L}_{\text{task}} = \mathcal{L}_{\text{data}} + 0.50 \mathcal{L}_{\text{mono}}^{\text{inner}}
-$$
+
+$$\mathcal{L}_{\text{task}} = \mathcal{L}_{\text{data}} + 0.50 \mathcal{L}_{\text{mono}}^{\text{inner}}$$
 
 **4.2 Few-Shot Adaptation Results**
 | $k$ shots | RMSE ↓ | NASA ↓ | ECE ↓ | Notes |
@@ -212,7 +219,9 @@ $$
 ### 5. Core Scientific Claim — Predictive Accuracy ≠ Physical Validity
 
 **🔹 Function Space & Preliminaries**
+
 $$f_\theta \in \mathcal{F}_{\text{NN}}, \quad \mathcal{F}_{\text{phys}} = \{ f : f \text{ satisfies governing PDEs} \}$$
+
 $$\mathcal{F}_{\text{PINN}} = \arg\min_{f_\theta \in \mathcal{F}_{\text{NN}}} \left[ \mathcal{L}_{\text{data}} + \lambda \mathcal{L}_{\text{phys}} \right]$$
 
 **Key Assumptions:**
@@ -221,21 +230,37 @@ $$\mathcal{F}_{\text{PINN}} = \arg\min_{f_\theta \in \mathcal{F}_{\text{NN}}} \l
 3. Soft constraint: $\lambda < \infty$
 
 **🔷 The PINN Misalignment Principle**
-$$\boxed{ \mathcal{F}_{\text{PINN}} \subset \mathcal{F}_{\text{approx}} \quad \text{but} \quad \mathcal{F}_{\text{PINN}} \not\subset \mathcal{F}_{\text{phys}} }$$
+
+$$\mathcal{F}_{\text{PINN}} \subset \mathcal{F}_{\text{approx}} \quad \text{but} \quad \mathcal{F}_{\text{PINN}} \not\subset \mathcal{F}_{\text{phys}}$$
+
 *Interpretation: PINNs approximate functions well, but do not inherently stay inside the physics space. Here, $\mathcal{F}_{\text{approx}}$ denotes the class of functions representable by neural networks under finite data approximation.*
 
 **🔷 Empirical Proposition (Non-Identifiability of Soft-Constrained PINNs)**
-$$\boxed{ \text{If } \lambda < \infty \text{ and } f_{\text{phys}} \text{ is non-identifiable, then } \arg\min \mathcal{L}_{\text{data}} \not\subseteq \mathcal{F}_{\text{phys}} }$$
+
+$$\text{If } \lambda < \infty \text{ and } f_{\text{phys}} \text{ is non-identifiable, then } \arg\min \mathcal{L}_{\text{data}} \not\subseteq \mathcal{F}_{\text{phys}}$$
+
 *Note: We provide an empirical argument supported by experimental evidence, not a formal mathematical proof.*
 *Insight: The failure of PINNs is not due to weak optimization, but due to the non-identifiability of latent physics under partial observability. The physics loss is not identifiable from observed variables, constituting a fundamental inverse problem rather than a mere training flaw.*
 
 **🔷 Empirical Argument & Proof Sketch**
-1. Neural networks act as universal approximators.
-2. Due to non-identifiability, $\exists f_1, f_2 \in \mathcal{F}_{\text{NN}} \quad \text{s.t.} \quad f_1(X) = f_2(X) \;\forall X \in \mathcal{D}$, where $f_1 \in \mathcal{F}_{\text{phys}}$ and $f_2 \notin \mathcal{F}_{\text{phys}}$.
-3. This implies $\mathcal{L}_{\text{data}}(f_1) = \mathcal{L}_{\text{data}}(f_2)$. However, $\mathcal{L}_{\text{phys}}(f_1) \ll \mathcal{L}_{\text{phys}}(f_2)$.
-4. Because the physics loss acts strictly as a soft regularizer ($\lambda < \infty$), the optimizer can freely converge to the statistical shortcut $f_2$ without penalty on the data manifold.
-5. $\Rightarrow f_\theta \notin \mathcal{F}_{\text{phys}}$. The failure is optimization-consistent.
 
+1. Neural networks act as universal approximators.
+
+2. Due to non-identifiability, multiple functions can produce identical outputs over the dataset:
+
+   ∃ f₁, f₂ ∈ 𝓕_NN  such that  f₁(X) = f₂(X)  ∀ X ∈ 𝓓
+
+   where f₁ ∈ 𝓕_phys and f₂ ∉ 𝓕_phys.
+
+3. This implies the data loss is identical for both, but the physics loss is significantly different:
+
+   𝓛_data(f₁) = 𝓛_data(f₂)  but  𝓛_phys(f₁) ≪ 𝓛_phys(f₂)
+
+4. Because the physics loss acts strictly as a soft regularizer (λ < ∞), the optimizer can freely converge to the statistical shortcut f₂ without penalty on the data manifold.
+
+5. ⇒ f_θ ∉ 𝓕_phys. The failure is optimization-consistent.
+
+   
 **5.1 Verification Mapping: Theory vs. Experiment**
 | Equation / Theory | Predicted Behavior | Measured Empirical Result | Implication |
 | :--- | :--- | :--- | :--- |
@@ -244,23 +269,31 @@ $$\boxed{ \text{If } \lambda < \infty \text{ and } f_{\text{phys}} \text{ is non
 | Monotonic Damage | $\hat{y}_{t+1} \le \hat{y}_t$ | 100% compliance | Easy topological constraint |
 
 **5.2 Domain Invariance Proof**
-If $f_\theta \in \mathcal{F}_{\text{phys}}$, then $m_{\text{source}} = m_{\text{target}}$ must hold invariantly across domains. However, we observed $m_{\text{UTDTB}} \neq m_{\text{N-CMAPSS}}$ even under consistent normalization. The difference is statistically significant ($p < 0.05$), ruling out estimation noise. True physics is domain-invariant; learned representations are domain-dependent:
-$$m_{\text{source}} \neq m_{\text{target}} \Rightarrow f_\theta \notin \mathcal{F}_{\text{phys}}$$
-Formally: $\Pr(\hat{m} = m_{\text{true}}) \approx 0$. Domain invariance violation serves as the strongest empirical evidence of non-physical learning.
+
+If f_θ ∈ 𝓕_phys, then m_source = m_target must hold invariantly across domains. However, we observed m_UTDTB ≠ m_N-CMAPSS **even under consistent normalization**. The difference is statistically significant (p < 0.05), ruling out estimation noise. True physics is domain-invariant; learned representations are domain-dependent:
+
+m_source ≠ m_target ⇒ f_θ ∉ 𝓕_phys
+
+Formally: Pr( m̂ = m_true ) ≈ 0. **Domain invariance violation serves as the strongest empirical evidence of non-physical learning.**
 
 ### 6. Uncertainty Quantification & The Manifold Projection Hypothesis (MPH)
 **6.1 Decomposed Heteroscedastic Uncertainty**
-$$
-\log\sigma_{\text{total}}^2 = \text{logaddexp}\left(\log\sigma_a^2, \log\sigma_e^2\right)
-$$
+
+$$\log\sigma_{\text{total}}^2 = \text{logaddexp}\left(\log\sigma_a^2, \log\sigma_e^2\right)$$
 
 **6.2 Uncertainty Collapse under OOD (The Manifold Projection Hypothesis)**
 Define the projection operator onto the training manifold:
+
 $$\phi_\theta(X_{\text{OOD}}) = \Pi_{\mathcal{M}_{\text{train}}}(X_{\text{OOD}})$$
+
 **The Manifold Projection Hypothesis (MPH):** We empirically observe that deep encoders behave as approximate manifold projectors under distribution shift. Supported by latent density overlap metrics, distance-to-manifold plots, and reconstruction error vs OOD severity, neural networks force out-of-distribution inputs to collapse onto the known training manifold:
-$$\boxed{ \phi_\theta(X_{\text{OOD}}) \;\approx\; \Pi_{\mathcal{M}_{\text{train}}}(X_{\text{OOD}}) \quad \text{(empirically observed)} }$$
+
+$$\phi_\theta(X_{\text{OOD}}) \approx \Pi_{\mathcal{M}_{\text{train}}}(X_{\text{OOD}}) \quad \text{(empirically observed)}$$
+
 This yields the observed density match $p(z_{\text{OOD}}) \approx p(z_{\text{ID}}) \implies \sigma_e^2 \downarrow$ and the final deflation:
+
 $$\sigma^2_{\text{OOD}} < \sigma^2_{\text{ID}} \quad (\text{deflation} \approx 10\%)$$
+
 *Insight: The MPH provides a consistent explanatory hypothesis supported by observed latent collapse behavior. The model forces novelty to look normal, reporting artificially low uncertainty ("fake normalcy").*
 
 ---
@@ -285,80 +318,166 @@ $$\sigma^2_{\text{OOD}} < \sigma^2_{\text{ID}} \quad (\text{deflation} \approx 1
 ## 🚀 Getting Started (Reproducibility)
 
 ### 🛠️ Environment Setup
+
 ```bash
 git clone https://github.com/GURU1001S/ThermoPINN.git
 cd ThermoPINN
 pip install -r requirements.txt
+
+# Train the model
+python train_maml_pinn.py
+
+# Evaluate on N-CMAPSS
+python evaluate_ncmapss_adapted.py
 ```
 
+---
+
 ### ⚡ Execution Pipeline
-* Train Base Model: `python train_maml_pinn.py --epochs 50`
-* Run Sim-to-Real Eval: `python evaluate_ncmapss_adapted.py --dataset DS02`
-* Physics Validation: `python external_physics_validation.py`
 
-## 🔁 Reproducibility & Configuration
+- **Train Base Model**
+  ```bash
+  python train_maml_pinn.py --epochs 50
+  ```
+
+- **Run Sim-to-Real Evaluation**
+  ```bash
+  python evaluate_ncmapss_adapted.py --dataset DS02
+  ```
+
+- **Physics Validation**
+  ```bash
+  python external_physics_validation.py
+  ```
+
+---
+
+### 🔁 Reproducibility & Configuration
+
 To ensure research transparency, all experiments are reproducible under the following configuration:
-* **Sequence Length:** 30 cycles (Sliding Window)
-* **Batch Size:** 256
-* **Optimizer:** Adam (lr = 1e-3, weight_decay = 1e-4)
-* **Training Epochs:** 50 (with Early Stopping)
-* **Normalization:** Per-trajectory Z-score normalization to prevent data leakage.
-* **Physics Constants:** Paris Law ($m = 3.0$), Arrhenius Activation ($E_a = 300$ kJ/mol)
-* **Hardware:** NVIDIA RTX 3050 Laptop GPU (~120 hours total compute time)
-* **Random Seed:** 42
 
-All experiments can be reproduced via the provided scripts with fixed random seeds and dataset configurations.
+- **Sequence Length:** 30 cycles (Sliding Window)  
+- **Batch Size:** 256  
+- **Optimizer:** Adam (lr = 1e-3, weight_decay = 1e-4)  
+- **Training Epochs:** 50 (with Early Stopping)  
+- **Normalization:** Per-trajectory Z-score normalization (prevents data leakage)  
+- **Physics Constants:**  
+  - Paris Law → m = 3.0  
+  - Arrhenius Activation → Eₐ = 300 kJ/mol  
+- **Hardware:** NVIDIA RTX 3050 Laptop GPU (~120 hours total compute)  
+- **Random Seed:** 42  
 
-## ⚠️ Limitations & Future Research Directions
-ThermoPINN reveals a fundamental gap between predictive accuracy and physical validity in safety-critical machine learning systems. While the model achieves strong empirical performance, our results provide consistent empirical and theoretical evidence that soft-constrained formulations:
-$$f_{\text{phys}}(z) \approx 0$$
-are insufficient to guarantee adherence to governing physical laws under partial observability and distribution shift.
+All experiments can be reproduced using the provided scripts with fixed seeds and dataset configurations.
 
-Rather than presenting a final solution, ThermoPINN is positioned as a controlled failure case that exposes structural limitations of current PINN methodologies. Addressing these limitations requires a shift from regularization-based physics integration toward structural enforcement of physical laws.
+---
+
+### ⚠️ Limitations & Future Research Directions
+
+ThermoPINN reveals a fundamental gap between **predictive accuracy** and **physical validity** in safety-critical ML systems.
+
+While the model achieves strong empirical performance, we provide consistent empirical and theoretical evidence that soft-constrained formulations:
+
+```
+f_phys(z) ≈ 0
+```
+
+are insufficient to guarantee adherence to governing physical laws under **partial observability** and **distribution shift**.
+
+Rather than presenting a final solution, ThermoPINN is positioned as a **controlled failure case** that exposes structural limitations of current PINN methodologies.
+
+---
 
 ### 🔧 1. Hard-Constrained Architectures
-Future work should investigate architectures that enforce physics as strict constraints:
-$$z \in \{ z : f_{\text{phys}}(z) = 0 \}, \quad \text{or} \quad z = g_\psi(u), \; g_\psi \in \mathcal{F}_{\text{phys}}$$
-Such formulations eliminate degrees of freedom that enable statistical shortcut learning and may resolve identifiability issues observed in soft-constrained PINNs.
+
+Future work should investigate enforcing physics as strict constraints:
+
+```
+z ∈ { z : f_phys(z) = 0 }  
+or  
+z = g_ψ(u),  where g_ψ ∈ 𝓕_phys
+```
+
+These formulations remove degrees of freedom that enable statistical shortcut learning and may resolve identifiability issues.
+
+---
 
 ### 🧠 2. Physics-Consistent Latent Representations
-The observed failure to recover domain-invariant physical constants highlights the need for:
-* Symbolic regression heads for explicit equation discovery.
-* Structured latent spaces aligned with physical variables.
-* Hybrid neuro-symbolic models that enforce interpretability and invariance.
 
-These approaches aim to ensure that learned representations remain within the true physical function space, rather than merely approximating it.
+The failure to recover domain-invariant constants highlights the need for:
+
+- Symbolic regression heads (explicit equation discovery)  
+- Structured latent spaces aligned with physical variables  
+- Hybrid neuro-symbolic models  
+
+These ensure representations remain within the **true physical function space**, not just approximations.
+
+---
 
 ### 📏 3. Unit-Consistent Learning
-Our experiments reveal that normalization can distort physical relationships:
-* Physics laws are inherently scale-sensitive.
-* Standard normalization destroys unit consistency.
 
-Future systems must adopt:
-$$\tilde{x} = \frac{x}{x_{\text{ref}}}$$
-or operate directly in physical units, ensuring that learned constants retain real-world meaning.
+Normalization can distort physics:
+
+- Physics laws are **scale-sensitive**  
+- Standard normalization destroys unit consistency  
+
+Future systems should use:
+
+```
+x̃ = x / x_ref
+```
+
+or operate directly in **physical units** to preserve real-world meaning.
+
+---
 
 ### 🌐 4. Identifiability Under Partial Observability
-The failure modes observed in ThermoPINN suggest that latent physics is fundamentally non-identifiable from limited sensor observations. Future research should:
-* Formally characterize identifiability conditions.
-* Quantify ambiguity in inverse mappings.
-* Develop architectures robust to latent uncertainty.
 
-This connects PINN failure to classical inverse problem theory.
+Latent physics is fundamentally **non-identifiable** from limited observations.
 
-### ⚠️ 5. Robustness to Distribution Shift (MPH Validation)
-The proposed Manifold Projection Hypothesis (MPH) suggests that neural encoders project OOD inputs onto the training manifold, leading to false normalcy and uncertainty collapse. Future work must:
-* Develop quantitative metrics for manifold projection behavior.
-* Validate MPH across architectures and datasets.
-* Design models that preserve OOD separability in latent space.
+Future work should:
+
+- Characterize identifiability conditions  
+- Quantify inverse ambiguity  
+- Build architectures robust to latent uncertainty  
+
+This connects PINNs to **inverse problem theory**.
+
+---
+
+### ⚠️ 5. Robustness to Distribution Shift (MPH)
+
+The **Manifold Projection Hypothesis (MPH)** suggests neural encoders project OOD inputs onto the training manifold, causing:
+
+- False normalcy  
+- Uncertainty collapse  
+
+Future work should:
+
+- Measure manifold projection behavior  
+- Validate MPH across datasets  
+- Preserve OOD separability in latent space  
+
+---
 
 ### ✈️ 6. Certification-Aware AI for Aerospace
-For deployment in safety-critical systems, future models must align with certification frameworks such as DO-178C and ARP4761. This requires:
-* Physically valid predictions.
-* Calibrated uncertainty under OOD.
-* Interpretable degradation trajectories.
 
-## 🔭 Research Outlook
-Addressing these challenges requires moving beyond correlation-driven learning toward architectures where physical laws are treated as first-class structural constraints, not auxiliary losses.
+For real-world deployment, models must align with:
 
-ThermoPINN therefore serves as an empirical foundation for the next generation of physics-consistent, safety-certifiable machine learning systems.
+- DO-178C (avionics software certification)  
+- ARP4761 (safety assessment)  
+
+This requires:
+
+- Physically valid predictions  
+- Calibrated uncertainty under OOD  
+- Interpretable degradation trajectories  
+
+---
+
+### 🔭 Research Outlook
+
+Progress requires moving beyond **correlation-driven learning** toward architectures where physics is a **first-class structural constraint**, not a regularizer.
+
+ThermoPINN serves as:
+
+> **An empirical foundation for the next generation of physics-consistent, safety-certifiable AI systems.**
