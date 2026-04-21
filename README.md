@@ -474,7 +474,10 @@ This requires:
 
 ---
 
-### 🔭 Research Outlook
+
+## ⚖️ License & Copyright
+**© 2026 Guru Prasaath S. All Rights Reserved.**
+This code is currently closed-source and provided strictly for academic evaluation. Unauthorized copying, modification, or distribution is prohibited. For collaboration inquiries, please contact me directly.
 
 Progress requires moving beyond **correlation-driven learning** toward architectures where physics is a **first-class structural constraint**, not a regularizer.
 
